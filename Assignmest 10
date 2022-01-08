@@ -1,0 +1,462 @@
+/*
+ * To change this license header, choose License Headers in Project Properties.
+ * To change this template file, choose Tools | Templates
+ * and open the template in the editor.
+ */
+package onlinemoviestoredbgui;
+
+import java.sql.Connection;
+import java.sql.DriverManager;
+import java.sql.SQLException;
+import java.sql.Statement;
+import java.sql.ResultSet;
+import java.util.Arrays;
+import javafx.application.Application;
+import javafx.beans.property.SimpleStringProperty;
+import javafx.beans.value.ObservableValue;
+import javafx.collections.FXCollections;
+import javafx.collections.ObservableList;
+import javafx.event.ActionEvent;
+import javafx.event.EventHandler;
+import javafx.scene.Scene;
+import javafx.scene.control.Button;
+import javafx.scene.control.ChoiceBox;
+import javafx.scene.control.Label;
+import javafx.scene.control.Separator;
+import javafx.scene.control.TableView;
+import javafx.scene.control.TableColumn;
+import javafx.scene.control.TableColumn.CellDataFeatures;
+import javafx.scene.control.TextField;
+import javafx.scene.control.Tooltip;
+import javafx.scene.layout.GridPane;
+import javafx.stage.Stage;
+import javafx.stage.WindowEvent;
+import javafx.util.Callback;
+import java.util.HashMap;
+
+/**
+ * Online Movie Store DBMS
+ * Creates a GUI to interact with the database of an online movie store.
+ * See readme.txt for more details about the operation of the GUI.
+ * 
+ * @author Maathavan Muruganandan (500964712)
+ * @author Sai Sreekar Yammanuru (500939979)
+ * @author Mohamad Hnaino (500747064)
+ */
+public class OnlineMovieStoreDBGUI extends Application {
+ 
+    private final String username = "username";
+    private final String password = "password";
+    private final String port = "1521";
+    private final String ssid = "orcl";
+    private final String dbURL = "jdbc:oracle:thin:" + username + "/" + password + "@oracle.cs.ryerson.ca:" + port + ":" + ssid;
+    private ObservableList<ObservableList> data;
+    private TableView<ObservableList> tableview;
+    private GridPane root;
+    private Label status;
+    private HashMap<String, Integer> order = new HashMap<>();
+    private HashMap<String, Integer> dropOrder = new HashMap<>();
+    
+    public static void main(String[] args) {
+        launch(args);
+    }
+    
+    /**
+     * Initializes the hash maps order and dropOrder that contain the order in which create, populate, and drop should be executed.
+     */
+    public void initOrder() {
+        order.put("Customer", 0);
+        order.put("Member", 1);
+        order.put("Genre", 2);
+        order.put("Supplier", 3);
+        order.put("Title", 4);
+        order.put("Movie", 5);
+        order.put("TVShow", 6);
+        order.put("GenreContainsTitle", 7);
+        order.put("SupplierSuppliesTitle", 8);
+        order.put("TitleBoughtByCustomer", 9);
+        
+        dropOrder.put("Member", 0);
+        dropOrder.put("Movie", 1);
+        dropOrder.put("TVShow", 2);
+        dropOrder.put("GenreContainsTitle", 3);
+        dropOrder.put("SupplierSuppliesTitle", 4);
+        dropOrder.put("TitleBoughtByCustomer", 5);
+        dropOrder.put("Customer", 6);
+        dropOrder.put("Genre", 7);
+        dropOrder.put("Supplier", 8);
+        dropOrder.put("Title", 9);
+    }
+    
+    /**
+     * Creates the given table. If table = "All Tables", all tables are created, with those already created being ignored.
+     * @param stmt 
+     * @param table the table to be created
+     * @throws SQLException if the table to be created already exists
+     */
+    public void createTables(Statement stmt, String table) throws SQLException {
+        String[] queries = {
+            "CREATE TABLE CUSTOMER (EMAIL VARCHAR2(50) PRIMARY KEY,CUSTOMERNAME VARCHAR2(50) NOT NULL, PHONENUMBER VARCHAR2(10), POSTALCODE VARCHAR2(6) NOT NULL, COUNTRY VARCHAR2(20) NOT NULL, PROVINCE VARCHAR2(20) NOT NULL, STREETADDRESS VARCHAR2(30) NOT NULL, CITY VARCHAR2(30) NOT NULL, RETURNED_CANCELLED_ITEMS VARCHAR2(100), PURCHASED_ITEMS VARCHAR2(100) NOT NULL, FINALCOST VARCHAR2(10) NOT NULL)",
+            "CREATE TABLE MEMBER (EMAIL REFERENCES CUSTOMER(EMAIL) PRIMARY KEY, MEMBERSHIPTIER VARCHAR2(10) NOT NULL)",
+            "CREATE TABLE GENRE (GENREID VARCHAR2(10) PRIMARY KEY, GENRENAME VARCHAR2(20) NOT NULL)",
+            "CREATE TABLE SUPPLIER (SUPPLIERNAME VARCHAR2(30) PRIMARY KEY, POSTALCODE VARCHAR2(6) NOT NULL, COUNTRY VARCHAR2(20) NOT NULL, PROVINCE VARCHAR2(20) NOT NULL, STREETADDRESS VARCHAR2(30) NOT NULL, CITY VARCHAR2(30) NOT NULL)",
+            "CREATE TABLE TITLE (TITLENAME VARCHAR2(210) PRIMARY KEY, PRICE VARCHAR2(10) NOT NULL, SUPPLY INTEGER NOT NULL)",
+            "CREATE TABLE MOVIE (MOVIENAME REFERENCES TITLE(TITLENAME) PRIMARY KEY, DURATION VARCHAR2(10) NOT NULL)",
+            "CREATE TABLE TVSHOW (TVSHOWNAME REFERENCES TITLE(TITLENAME) PRIMARY KEY, NUMBEREPISODES INTEGER NOT NULL, SEASONNAME VARCHAR2(20) NOT NULL)",
+            "CREATE TABLE GENRECONTAINSTITLE (GENREID REFERENCES GENRE(GENREID), TITLENAME REFERENCES TITLE(TITLENAME), PRIMARY KEY (GENREID, TITLENAME))",
+            "CREATE TABLE SUPPLIERSUPPLIESTITLE (SUPPLIERNAME REFERENCES SUPPLIER(SUPPLIERNAME), TITLENAME REFERENCES TITLE(TITLENAME), QUANTITYSUPPLIED INTEGER NOT NULL, PRICEPERUNIT VARCHAR2(10) NOT NULL, PRIMARY KEY (SUPPLIERNAME, TITLENAME))",
+            "CREATE TABLE TITLEBOUGHTBYCUSTOMER (TITLENAME REFERENCES TITLE(TITLENAME), CUSTOMEREMAIL REFERENCES CUSTOMER(EMAIL), PRIMARY KEY (TITLENAME, CUSTOMEREMAIL))"
+        };
+        if (table.equals("All Tables")) {
+            for (String query : queries) {
+                try {
+                    stmt.executeUpdate(query);
+                } catch (SQLException e) {}
+            }
+        } else {
+            stmt.executeUpdate(queries[order.get(table)]);
+        }
+        stmt.executeUpdate("COMMIT");
+    }
+    
+    /**
+     * Populates the given table. If table = "All Tables", all tables are populated.
+     * @param stmt
+     * @param table the table to be populated
+     * @throws SQLException 
+     */
+    public void populateTables(Statement stmt, String table) throws SQLException {
+        String[][] queries = {
+            {"INSERT INTO CUSTOMER VALUES ('john@gmail.com', 'John Stevens', '1234567890', 'A1A1A1', 'Canada', 'Ontario', '123 First Street', 'Toronto', NULL, 'Shrek 2', '7.99')",
+                "INSERT INTO CUSTOMER VALUES ('steve123@gmail.com', 'Steve Johnson', '5555551234', 'B2B2B2', 'Canada', 'Quebec', '2 Rue Premiere', 'Montreal', 'Shrek', 'Shrek 2', '7.99')",
+                "INSERT INTO CUSTOMER VALUES ('anna125@gmail.com', 'Anna Stevenson', '1235554321', 'C3C3C3', 'Canada', 'British Columbia', '1 Water Road', 'Vancouver', NULL, 'Shrek', '8.99')"},
+            {"INSERT INTO MEMBER VALUES ('john@gmail.com', 'Premium')",
+                "INSERT INTO MEMBER VALUES ('anna125@gmail.com', 'VIP')"},
+            {"INSERT INTO GENRE VALUES ('0001', 'Fantasy')",
+                "INSERT INTO GENRE VALUES ('0002', 'Action')",
+                "INSERT INTO GENRE VALUES ('0003', 'Adventure')",
+                "INSERT INTO GENRE VALUES ('0004', 'Western')",
+                "INSERT INTO GENRE VALUES ('0005', 'Comedy')"},
+            {"INSERT INTO SUPPLIER VALUES ('Company Branch 1', 'A1B2C3', 'Canada', 'Ontario', '43 Data Street', 'Toronto')",
+                "INSERT INTO SUPPLIER VALUES ('Company Branch 5', 'D1E2F3', 'Canada', 'British Columbia', '47 Work Street', 'Victoria')",
+                "INSERT INTO SUPPLIER VALUES ('Company Branch 8', 'G1H2I3', 'Canada', 'Nova Scotia', '12 Atlantic Street', 'Halifax')"},
+            {"INSERT INTO TITLE VALUES ('Shrek', '8.99', 5)",
+                "INSERT INTO TITLE VALUES ('Shrek 2', '7.99', 6)",
+                "INSERT INTO TITLE VALUES ('Community Season 1', '8.99', 10)",
+                "INSERT INTO TITLE VALUES ('Community Season 2', '9.99', 4)",
+                "INSERT INTO TITLE VALUES ('Inside Out', '10.99', 5)"},
+            {"INSERT INTO MOVIE VALUES ('Shrek', '90')",
+                "INSERT INTO MOVIE VALUES ('Shrek 2', '92')",
+                "INSERT INTO MOVIE VALUES ('Inside Out', '95')"},
+            {"INSERT INTO TVSHOW VALUES ('Community Season 1', 25, 'Season 1')",
+                "INSERT INTO TVSHOW VALUES ('Community Season 2', 24, 'Season 2')"},
+            {"INSERT INTO GENRECONTAINSTITLE VALUES ('0001', 'Shrek')",
+                "INSERT INTO GENRECONTAINSTITLE VALUES ('0005', 'Shrek')",
+                "INSERT INTO GENRECONTAINSTITLE VALUES ('0001', 'Shrek 2')",
+                "INSERT INTO GENRECONTAINSTITLE VALUES ('0005', 'Shrek 2')",
+                "INSERT INTO GENRECONTAINSTITLE VALUES ('0001', 'Inside Out')",
+                "INSERT INTO GENRECONTAINSTITLE VALUES ('0003', 'Inside Out')",
+                "INSERT INTO GENRECONTAINSTITLE VALUES ('0005', 'Inside Out')",
+                "INSERT INTO GENRECONTAINSTITLE VALUES ('0005', 'Community Season 1')",
+                "INSERT INTO GENRECONTAINSTITLE VALUES ('0005', 'Community Season 2')"},
+            {"INSERT INTO SUPPLIERSUPPLIESTITLE VALUES ('Company Branch 1', 'Shrek', 4, '5.99')",
+                "INSERT INTO SUPPLIERSUPPLIESTITLE VALUES ('Company Branch 5', 'Shrek', 2, '5.99')",
+                "INSERT INTO SUPPLIERSUPPLIESTITLE VALUES ('Company Branch 1', 'Shrek 2', 8, '5.99')",
+                "INSERT INTO SUPPLIERSUPPLIESTITLE VALUES ('Company Branch 8', 'Inside Out', 3, '7.99')",
+                "INSERT INTO SUPPLIERSUPPLIESTITLE VALUES ('Company Branch 1', 'Inside Out', 2, '7.99')",
+                "INSERT INTO SUPPLIERSUPPLIESTITLE VALUES ('Company Branch 5', 'Community Season 1', 10, '5.99')",
+                "INSERT INTO SUPPLIERSUPPLIESTITLE VALUES ('Company Branch 1', 'Community Season 2', 4, '6.99')"},
+            {"INSERT INTO TITLEBOUGHTBYCUSTOMER VALUES ('Shrek 2', 'john@gmail.com')",
+                "INSERT INTO TITLEBOUGHTBYCUSTOMER VALUES ('Shrek 2', 'steve123@gmail.com')",
+                "INSERT INTO TITLEBOUGHTBYCUSTOMER VALUES ('Shrek', 'anna125@gmail.com')"},
+        };
+        String[] allQueries;
+        if (table.equals("All Tables")) {
+            allQueries = Arrays.stream(queries).flatMap(Arrays::stream).toArray(size -> new String[size]);
+            for (String query : allQueries) {
+                try {
+                    stmt.executeUpdate(query);
+                } catch (SQLException e) {}
+            }
+        } else {
+            allQueries = queries[order.get(table)]; 
+            for (String query : allQueries) {
+                stmt.executeUpdate(query);
+            }
+        }
+        stmt.executeUpdate("COMMIT");
+    }
+    
+    /**
+     * Executes the given SQL statement. Only SELECT, UPDATE, and DELETE statements are allowed.
+     * @param stmt
+     * @param query the SQL statement to be executed
+     * @throws SQLException in case of invalid statement
+     */
+    public void queryTables(Statement stmt, String query) throws SQLException {
+        ResultSet rs = stmt.executeQuery(query);
+        data = FXCollections.observableArrayList();
+        tableview = new TableView<>();
+        for(int i=0 ; i<rs.getMetaData().getColumnCount(); i++){
+            final int j = i;                
+            TableColumn<ObservableList, String> col = new TableColumn<>(rs.getMetaData().getColumnName(i+1));
+            col.setCellValueFactory(new Callback<CellDataFeatures<ObservableList,String>,ObservableValue<String>>(){                    
+                public ObservableValue<String> call(CellDataFeatures<ObservableList, String> param) { 
+                    if (param.getValue().get(j) == null)
+                        return new SimpleStringProperty("[null]");
+                    return new SimpleStringProperty(param.getValue().get(j).toString());                        
+                }                    
+            });
+            tableview.getColumns().add(col);
+        }
+
+        //add data to observablelist
+        while(rs.next()){
+            ObservableList<String> row = FXCollections.observableArrayList();
+            for(int i=1 ; i<=rs.getMetaData().getColumnCount(); i++){
+                row.add(rs.getString(i));
+            }
+            data.add(row);
+        }
+
+        //add data to tableview
+        tableview.setItems(data);
+    }
+    
+    public void updateTables(Statement stmt, String command) throws SQLException {
+        stmt.executeUpdate(command);
+        stmt.executeUpdate("COMMIT");
+    }
+    
+    /**
+     * Drops the given table. If table = "All Tables", all tables are dropped, with those that don't exist being ignored.
+     * @param stmt
+     * @param table the table to be dropped
+     * @throws SQLException if the table to be dropped doesn't exist
+     */
+    public void dropTables(Statement stmt, String table) throws SQLException {
+        String[] queries = {
+            "DROP TABLE MEMBER",
+            "DROP TABLE MOVIE",
+            "DROP TABLE TVSHOW",
+            "DROP TABLE GENRECONTAINSTITLE",
+            "DROP TABLE SUPPLIERSUPPLIESTITLE",
+            "DROP TABLE TITLEBOUGHTBYCUSTOMER",
+            "DROP TABLE CUSTOMER",
+            "DROP TABLE GENRE",
+            "DROP TABLE SUPPLIER",
+            "DROP TABLE TITLE"
+        };
+        if (table.equals("All Tables")) {
+            for (String query : queries) {
+                try {
+                    stmt.executeUpdate(query);
+                } catch (SQLException e) {}
+            }
+        } else {
+            stmt.executeUpdate(queries[dropOrder.get(table)]);
+        }
+        stmt.executeUpdate("COMMIT");
+    }
+    
+    /**
+     * Gets all information from the given table. If table = "All Tables", it gets all tables in the database.
+     * @param stmt
+     * @param table the table to be accessed
+     * @throws SQLException 
+     */
+    public void selectAll(Statement stmt, String table) throws SQLException {
+        String query;
+        if (table.equals("All Tables")) {
+            query = "SELECT TABLE_NAME FROM USER_TABLES";
+        } else {
+            query = "SELECT * FROM " + table.toUpperCase();
+        }
+        queryTables(stmt, query);
+    }
+    
+    /**
+     * Builds GUI
+     * @param primaryStage 
+     */
+    @Override
+    public void start(Stage primaryStage) {
+        
+        status = new Label("");
+        initOrder();
+        
+        try {
+            Class.forName("oracle.jdbc.OracleDriver");
+            Connection conn1 = DriverManager.getConnection(dbURL);
+            setStatus("Connection Established");
+            Statement stmt = conn1.createStatement();
+            
+            ChoiceBox<Object> cb = new ChoiceBox<>(FXCollections.observableArrayList(
+                "All Tables", new Separator(), "Customer", "Member", "Genre", "Supplier", "Title", "Movie", "TVShow", "GenreContainsTitle", "SupplierSuppliesTitle", "TitleBoughtByCustomer"
+            ));
+            cb.setValue("All Tables");
+            cb.setTooltip(new Tooltip("Select the table"));
+                    
+            Button create = new Button();
+            create.setText("Create");
+            create.setOnAction(new EventHandler<ActionEvent>() {
+                @Override
+                public void handle(ActionEvent event) {
+                    clearStatus();
+                    String tablecb = (String)cb.getValue();
+                    try {
+                        createTables(stmt, tablecb);
+                        setStatus(tablecb + " Created");
+                    } catch (SQLException e) {
+                        setStatus(e.getMessage());
+                    }
+ 
+                }
+            });
+            
+            Button populate = new Button();
+            populate.setText("Populate");
+            populate.setOnAction(new EventHandler<ActionEvent>() {
+                @Override
+                public void handle(ActionEvent event) {
+                    clearStatus();
+                    String tablecb = (String)cb.getValue();
+                    try {
+                        populateTables(stmt, tablecb);
+                        setStatus(tablecb + " Populated");
+                    } catch (SQLException e) {
+                        setStatus(e.getMessage());
+                    }
+ 
+                }
+            });
+                      
+            TextField qbox = new TextField();
+            
+            Button query = new Button();
+            query.setText("Execute");
+            query.setOnAction(new EventHandler<ActionEvent>() {
+                @Override
+                public void handle(ActionEvent event) {
+                    clearStatus();
+                    try {
+                        String q = qbox.getText();
+                        String command = q.split(" ")[0].toLowerCase();
+                        if (!command.equals("select") && !command.equals("update") && !command.equals("delete")) {
+                            throw new IllegalArgumentException("Error: Only SELECT, UPDATE, and DELETE queries allowed");
+                        }
+                        if (command.equals("update")) {
+                            updateTables(stmt, q);
+                            setStatus("Update Executed");
+                        } else if (command.equals("delete")) {
+                            updateTables(stmt, q);
+                            setStatus("Deletion Executed");
+                        } else {
+                            queryTables(stmt, q);
+                            tableview.refresh();
+                            Stage stage = new Stage();
+                            stage.setTitle("Query Result: " + q);
+                            stage.setScene(new Scene(tableview));
+                            stage.setMinWidth(400);
+                            stage.show();
+                            setStatus("Query Executed");
+                        }
+                    } catch (SQLException | IllegalArgumentException e) {
+                        setStatus(e.getMessage());
+                    }
+                }
+            });
+            
+            Button drop = new Button();
+            drop.setText("Drop");
+            drop.setOnAction(new EventHandler<ActionEvent>() {
+                @Override
+                public void handle(ActionEvent event) {
+                    clearStatus();
+                    String tablecb = (String)cb.getValue();
+                    try {
+                        dropTables(stmt, tablecb);
+                        setStatus(tablecb + " Dropped");
+                    } catch (SQLException e) {
+                        setStatus(e.getMessage());
+                    }
+ 
+                }
+            });
+            
+            Button selectAll = new Button("Select All");
+            selectAll.setOnAction(new EventHandler<ActionEvent>() {
+                @Override
+                public void handle(ActionEvent event) {
+                    clearStatus();
+                    String tablecb = (String)cb.getValue();
+                    try {
+                        selectAll(stmt, tablecb);
+                        tableview.refresh();
+                        Stage stage = new Stage();
+                        stage.setTitle("Select All From " + tablecb);
+                        stage.setScene(new Scene(tableview));
+                        stage.setMinWidth(400);
+                        stage.show();
+                        setStatus(tablecb + " Queried");
+                    } catch (SQLException e) {
+                        setStatus(e.getMessage());
+                    }
+ 
+                }
+            });
+                       
+            root = new GridPane();
+            root.setVgap(10);
+            root.setHgap(10);
+            root.add(cb, 1, 1);
+            root.add(create, 2, 1);
+            root.add(drop, 3, 1);
+            root.add(populate, 4, 1);
+            root.add(selectAll, 5, 1);
+            root.add(qbox, 1, 2, 4, 1);
+            root.add(query, 5, 2);
+            root.add(status, 1, 3, 5, 1);
+
+            Scene scene = new Scene(root, 600, 400);
+
+            primaryStage.setTitle("Online Movie Store DBMS");
+            primaryStage.setScene(scene);
+            primaryStage.show();
+            
+            primaryStage.setOnCloseRequest(new EventHandler<WindowEvent>() {
+                @Override
+                public void handle(WindowEvent event) {
+                    clearStatus();
+                    try {
+                        if (conn1 != null && !conn1.isClosed()) {
+                            conn1.close();
+                            setStatus("Connection Closed");
+                        }
+                    } catch (SQLException e) {
+                        setStatus(e.getMessage());
+                    }
+                    System.exit(0);
+                }
+            });
+        
+        } catch (SQLException e) {
+            primaryStage.close();
+            clearStatus();
+            setStatus(e.getMessage());
+        } catch (ClassNotFoundException e) {
+            clearStatus();
+            setStatus(e.getMessage());
+        }
+    }  
+    
+    public void setStatus(String message) {
+        System.out.println(message.replace("\n", "").replace("\r", ""));
+        status.setText(message.replace("\n", "").replace("\r", ""));
+    }
+    
+    public void clearStatus() {
+        status.setText("");
+    }
+    
+}
